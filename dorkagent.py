@@ -1,13 +1,130 @@
-from dotenv import load_dotenv
+import sys, os, re, subprocess, getpass
 from datetime import datetime
+
+# --- Runtime environment bootstrap: Python & packages ---
+REQUIRED_PACKAGES = {
+    "python-dotenv": "dotenv",
+    "crewai": "crewai",
+    "crewai-tools": "crewai_tools",
+    "langchain-openai": "langchain_openai",
+    "termcolor": "termcolor",
+    "prompt-toolkit": "prompt_toolkit",
+    "pyfiglet": "pyfiglet",
+    "schedule": "schedule",
+}
+
+def _warn_python_version():
+    required_major, required_minor, required_patch = 3, 11, 9
+    v = sys.version_info
+    if (v.major, v.minor) != (required_major, required_minor) or v.micro != required_patch:
+        print(f"[!] Detected Python {v.major}.{v.minor}.{v.micro}. Recommended: 3.11.9.")
+        print("[!] Continuing, but if you see issues, use Python 3.11.9.")
+
+def _pip_install(spec: str):
+    try:
+        print(f"[+] Installing: {spec} ...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", spec])
+    except Exception as e:
+        print(f"[!] Failed to install {spec}: {e}")
+        raise
+
+def _ensure_packages():
+    import importlib
+    missing = []
+    for pip_name, import_name in REQUIRED_PACKAGES.items():
+        try:
+            importlib.import_module(import_name)
+        except Exception:
+            missing.append(pip_name)
+
+    req_file = os.path.join(os.path.dirname(__file__), "requirements.txt")
+    if missing and os.path.isfile(req_file):
+        try:
+            print(f"[+] Syncing dependencies from requirements.txt ...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_file, "--upgrade", "--upgrade-strategy", "only-if-needed"])
+            missing = []  # reset and re-evaluate
+            for pip_name, import_name in REQUIRED_PACKAGES.items():
+                importlib.import_module(import_name)
+            return
+        except Exception as e:
+            print(f"[!] Failed to install from requirements.txt: {e}. Falling back to per-package installs.")
+
+    # Install any still-missing packages individually
+    for pip_name in missing:
+        _pip_install(pip_name)
+    # Final import verification
+    for _, import_name in REQUIRED_PACKAGES.items():
+        importlib.import_module(import_name)
+
+# Execute checks before importing third-party modules
+_warn_python_version()
+_ensure_packages()
+
+# Import third-party modules after ensuring they are available
+from dotenv import load_dotenv
 from crewai import Crew, LLM, Task, Agent
 from langchain_openai import ChatOpenAI
 from termcolor import colored
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import PathCompleter
 from crewai_tools import SerperDevTool, ScrapeWebsiteTool
+import pyfiglet
+from crewai.utilities.exceptions.context_window_exceeding_exception import LLMContextLengthExceededError
 
-import sys, re, os, pyfiglet
+# Load environment early so model constructors see keys
+load_dotenv()
+
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+
+def _read_env_file(path: str) -> dict:
+    data = {}
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if '=' in line:
+                        k, v = line.split('=', 1)
+                        data[k.strip()] = v.strip()
+        except Exception:
+            pass
+    return data
+
+def _write_env_file(path: str, values: dict):
+    existing = _read_env_file(path)
+    existing.update(values)
+    lines = [f"{k}={existing[k]}" for k in sorted(existing.keys())]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+def ensure_api_keys(llm_type: str):
+    required_keys = ["SERPER_API_KEY"]
+    if llm_type == "openai":
+        required_keys.append("OPENAI_API_KEY")
+    elif llm_type == "anthropic":
+        required_keys.append("ANTHROPIC_API_KEY")
+    elif llm_type == "gemini":
+        required_keys.append("GEMINI_API_KEY")
+
+    missing = [k for k in required_keys if not os.getenv(k)]
+    if missing:
+        print("[!] Missing required API keys: " + ", ".join(missing))
+        provided = {}
+        for key in missing:
+            prompt_text = f"Enter value for {key}: "
+            try:
+                val = getpass.getpass(prompt_text)
+            except Exception:
+                val = input(prompt_text)
+            provided[key] = val.strip()
+        _write_env_file(ENV_PATH, provided)
+        # Reload environment so subsequent code can read keys
+        load_dotenv(dotenv_path=ENV_PATH, override=True)
+
+# Load environment early so model constructors see keys
+load_dotenv()
 
 def clear_terminal():
     os.system("cls" if os.name == "nt" else "clear")
@@ -37,9 +154,9 @@ def verify_api_key(llm_type):
 
     missing_keys = [key for key in required_keys if not os.getenv(key)]
     if missing_keys:
-        print("🚨 Missing required API keys:")
+        print("?슚 Missing required API keys:")
         for key in missing_keys:
-            print(f"   ❌ {key} is not set")
+            print(f"   ??{key} is not set")
         print("\nPlease check your .env file and set the missing keys.")
         sys.exit(1)
 
@@ -75,7 +192,7 @@ def select_llm():
         elif choice == "3":
             return GeminiFlash, "gemini"
         else:
-            print("❌ Invalid choice. Please enter 1 - 3.")
+            print("Invalid choice. Please enter 1 - 3.")
 
 def get_file_path(prompt_text):
     completer = PathCompleter()
@@ -106,10 +223,10 @@ def get_target_domains():
                         target_domains.append(domain)
                 break 
             else:
-                print("❌ File not found. Please enter a valid file path.")
+                print("??File not found. Please enter a valid file path.")
         
         else:
-            print("🚨 Invalid choice. Please select 1 - 2.")
+            print("?슚 Invalid choice. Please select 1 - 2.")
 
     return target_domains
 
@@ -125,7 +242,7 @@ def select_depth():
         if depth in ["1", "2", "3"]:
             return depth
         else:
-            print("❌ Invalid choice. Please enter 1 - 3.")
+            print("Invalid choice. Please enter 1 - 3.")
 
 def integrate_notify(): 
     while True: 
@@ -138,7 +255,7 @@ def integrate_notify():
         if notify in ["Y", "y", "N", "n"]: 
             return notify 
         else: 
-            print("❌ Invalid choice. Please enter Y or N")
+            print("??Invalid choice. Please enter Y or N")
 
 def adjust_depth(target_domains, depth):
     try:
@@ -146,7 +263,7 @@ def adjust_depth(target_domains, depth):
         if depth < 1:  
             raise ValueError("Invalid depth value")
     except ValueError:
-        print("❌ Invalid depth input. Defaulting to depth = 1.")
+        print("??Invalid depth input. Defaulting to depth = 1.")
         depth = 1
 
     if depth == 1:
@@ -200,6 +317,8 @@ def agents(llm):
     )
 
     return [searcher, bughunter, writer]
+
+# Removed min/max interactive configuration and system prompt per request
 
 def task(target_domain, domain, agents):
        
@@ -489,7 +608,7 @@ def task(target_domain, domain, agents):
 
         ## Formatting Requirements
         - Use clear section headers and professional formatting
-        - Include severity icons: 🔴 Critical, 🟠 High, 🟡 Medium, 🔵 Low, ℹ️ Info
+        - Include severity icons: ?뵶 Critical, ?윝 High, ?윞 Medium, ?뵷 Low, ?뱄툘 Info
         - Assign unique IDs: AV-001 (Attack Vector), ID-001 (Information Disclosure)
         - Use tables for risk matrices and summaries
         - Include actionable commands and URLs where relevant
@@ -512,11 +631,11 @@ def task(target_domain, domain, agents):
         **Target Scope**: {target_domain}
         
         **Risk Distribution:**
-        - 🔴 Critical: <critical_count> findings
-        - 🟠 High: <high_count> findings  
-        - 🟡 Medium: <medium_count> findings
-        - 🔵 Low: <low_count> findings
-        - ℹ️ Informational: <info_count> findings
+        -  Critical: <critical_count> findings
+        -  High: <high_count> findings  
+        -  Medium: <medium_count> findings
+        -  Low: <low_count> findings
+        -  Informational: <info_count> findings
 
         **Key Attack Vectors Discovered:**
         - <primary_attack_vector_1>
@@ -603,8 +722,8 @@ def task(target_domain, domain, agents):
 
         | Finding ID | Type | Severity | Exploitability | Business Impact | Priority |
         |------------|------|----------|----------------|-----------------|----------|
-        | AV-001 | <type> | 🔴 Critical | Easy | High | 1 |
-        | ID-001 | <type> | 🟠 High | N/A | Medium | 2 |
+        | AV-001 | <type> |  Critical | Easy | High | 1 |
+        | ID-001 | <type> |  High | N/A | Medium | 2 |
 
         ---
 
@@ -670,6 +789,45 @@ def task(target_domain, domain, agents):
     )
     return [task1, task2, task3]
 
+# Override select_llm with env-validated constructor
+def select_llm():
+    while True:
+        print("\n")
+        print("1. GPT-4o Mini")
+        print("2. Claude 3.5 Haiku")
+        print("3. Gemini 2.0 Flash")
+        print("\n")
+
+        choice = input("[?] Choose LLM for Agents (1 - 3): ").strip()
+
+        if choice == "1":
+            llm_type = "openai"
+            ensure_api_keys(llm_type)
+            llm = ChatOpenAI(
+                model_name="gpt-4o-mini-2024-07-18",
+                temperature=0,
+                api_key=os.getenv("OPENAI_API_KEY"),
+            )
+            return llm, llm_type
+        elif choice == "2":
+            llm_type = "anthropic"
+            ensure_api_keys(llm_type)
+            llm = LLM(
+                api_key=os.getenv('ANTHROPIC_API_KEY'),
+                model='anthropic/claude-3-5-haiku-20241022',
+            )
+            return llm, llm_type
+        elif choice == "3":
+            llm_type = "gemini"
+            ensure_api_keys(llm_type)
+            llm = LLM(
+                api_key=os.getenv('GEMINI_API_KEY'),
+                model='gemini/gemini-2.0-flash',
+            )
+            return llm, llm_type
+        else:
+            print("Invalid choice. Please enter 1 - 3.")
+
 if __name__ == "__main__":
 
     # Display banner
@@ -678,7 +836,6 @@ if __name__ == "__main__":
 
     # Select LLM
     llm, llm_type = select_llm()
-    agents = agents(llm)
 
     # API KEY verification
     load_dotenv()
@@ -700,6 +857,27 @@ if __name__ == "__main__":
     display_banner() 
     notify = integrate_notify()
 
+    # Default search results per query
+    n_results = 10
+
+    agent_list = agents(llm)
+
+    # Diagnostic: show configured results per query for Serper tool
+    try:
+        configured_n = None
+        from crewai_tools import SerperDevTool as _Serp
+        for _a in agent_list:
+            for _t in getattr(_a, 'tools', []) or []:
+                if isinstance(_t, _Serp):
+                    configured_n = getattr(_t, 'n_results', None) or getattr(_t, 'num_results', None) or getattr(_t, 'num', None)
+                    break
+            if configured_n is not None:
+                break
+        if configured_n is not None:
+            print(f"[i] Serper search results per query configured to: {configured_n}")
+    except Exception:
+        pass
+
     # Make directory for logging
     date = datetime.now().strftime("%y%m%d")
     LOG_DIR = os.path.join("./log", date)
@@ -718,10 +896,10 @@ if __name__ == "__main__":
         
         safe_domain = sanitize_filename(base_domain)
         
-        tasks = task(original_domain, domain, agents)
+        tasks = task(original_domain, domain, agent_list)
 
         crew = Crew(
-            agents=agents,  
+            agents=agent_list,  
             tasks=tasks, 
             verbose=1,
             max_rpm=15, # use 15, if you're using gemini free plan
@@ -730,9 +908,25 @@ if __name__ == "__main__":
 
         print(f"Dorking on {original_domain}...")
 
-        result = crew.kickoff()
+        try:
+            result = crew.kickoff()
+        except LLMContextLengthExceededError as e:
+            print("[!] Context window exceeded. Reducing search results and retrying...")
+            # Reduce n_results and rebuild agents/crew once
+            n_results = max(10, n_results // 2)
+            agent_list = agents(llm)
+            crew = Crew(agents=agent_list, tasks=tasks, verbose=1, max_rpm=15, output_log_file=True)
+            try:
+                result = crew.kickoff()
+            except LLMContextLengthExceededError:
+                print("[!] Still too large. Falling back to 15 results and retrying once more...")
+                n_results = 15
+                agent_list = agents(llm)
+                crew = Crew(agents=agent_list, tasks=tasks, verbose=1, max_rpm=15, output_log_file=True)
+                result = crew.kickoff()
 
-        report = os.path.join(f"log/{date}", f"{date}_{safe_domain}.md")
+        time_stamp = datetime.now().strftime("%H%M%S")
+        report = os.path.join(f"log/{date}", f"{date}_{time_stamp}_{safe_domain}.md")
         
         with open(report, "w", encoding="utf-8") as f:
             f.write(str(result))
@@ -744,3 +938,4 @@ if __name__ == "__main__":
                 print(f"Report sent successfully via notify!") 
             except Exception as e: 
                 print(f"Error sending report via notify: {str(e)}")
+
