@@ -21,13 +21,14 @@ python dorkagent.py
 
 The program will:
 - **Auto-install** all required packages on first run
-- **Prompt you to choose a search engine** (Serper or SerpApi) and an LLM provider
+- **Prompt you to choose a search engine** (Serper, SerpApi or Serply) and an LLM provider
 - **Prompt for API keys** and save them to `.env` file automatically
 
 Required API keys:
 - **One** search engine key, depending on your choice at runtime:
   - `SERPER_API_KEY` - For Serper (Get from https://serper.dev/)
   - `SERPAPI_API_KEY` - For SerpApi (Get from https://serpapi.com/manage-api-key)
+  - `SERPLY_API_KEY` - For Serply (Get from https://serply.io/)
 - At least **one** LLM API key:
   - `OPENAI_API_KEY` - For OpenAI models (GPT-4, GPT-5, etc.)
   - `ANTHROPIC_API_KEY` - For Claude models
@@ -48,6 +49,7 @@ https://medium.com/@yee-yore/llm-powered-agent-for-automated-google-dorking-dcb1
        ...
    ```
    - **SerpApi** (`serpapi_google_search_tool.py` inside `site-packages/crewai_tools/tools/serpapi_tool/`) — by default it only forwards `q`/`location` to SerpApi, so add a `"num"` key to the `client.search({...})` dict in `_run()` to control result count.
+   - **Serply** (`agents.py`), `limit` is a constructor argument, so set it there instead of editing site-packages: `SerplyWebSearchTool(limit=5)`. The API returns at most 10 results per request (https://serply.io/docs).
 2. Duration of google search results
    - **Serper** (`serper_dev_tool.py`)
    ```bash
@@ -67,6 +69,17 @@ https://medium.com/@yee-yore/llm-powered-agent-for-automated-google-dorking-dcb1
        "location": kwargs.get("location"),
        "tbs": "qdr:m", # Past week: "qdr:w", Past month: "qdr:m"
    }).as_dict()
+   ```
+   - **Serply** (`serply_web_search_tool.py` inside `site-packages/crewai_tools/tools/serply_api_tool/`), add a `"tbs"` key to the `self.query_payload` dict in `__init__()`:
+   ```bash
+   # https://serply.io/docs
+
+   self.query_payload = {
+       "num": limit,
+       "gl": proxy_location.upper(),
+       "hl": hl.lower(),
+       "tbs": "qdr:m", # Past week: "qdr:w", Past month: "qdr:m"
+   }
    ```
 3. Google dorks (`task()`)
 ```bash
