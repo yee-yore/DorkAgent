@@ -101,6 +101,7 @@ def prompt_provider_api_key(provider: str) -> str:
 SEARCH_ENGINE_KEY_NAMES = {
     "serper": "SERPER_API_KEY",
     "serpapi": "SERPAPI_API_KEY",
+    "serply": "SERPLY_API_KEY",
 }
 
 def select_search_engine():
@@ -110,16 +111,19 @@ def select_search_engine():
         print("\n")
         print("1. Serper (serper.dev)")
         print("2. SerpApi (serpapi.com)")
+        print("3. Serply (serply.io)")
         print("\n")
 
-        choice = input("[?] Choose Search Engine (1 - 2): ").strip()
+        choice = input("[?] Choose Search Engine (1 - 3): ").strip()
 
         if choice == "1":
             return "serper"
         elif choice == "2":
             return "serpapi"
+        elif choice == "3":
+            return "serply"
         else:
-            print("[!] Invalid choice. Please enter 1 - 2.")
+            print("[!] Invalid choice. Please enter 1 - 3.")
 
 def ensure_search_engine_api_key(engine: str) -> str:
     """Ensure the selected search engine's API key is available."""

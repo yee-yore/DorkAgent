@@ -1,10 +1,15 @@
 from crewai import Agent
-from crewai_tools import SerperDevTool, SerpApiGoogleSearchTool, ScrapeWebsiteTool, FileWriterTool
+from crewai_tools import SerperDevTool, SerpApiGoogleSearchTool, SerplyWebSearchTool, ScrapeWebsiteTool, FileWriterTool
 
 def agents(llm, search_engine: str = "serper") -> list:
     """Create and configure CrewAI agents."""
 
-    search_tool = SerpApiGoogleSearchTool() if search_engine == "serpapi" else SerperDevTool()
+    if search_engine == "serpapi":
+        search_tool = SerpApiGoogleSearchTool()
+    elif search_engine == "serply":
+        search_tool = SerplyWebSearchTool()
+    else:
+        search_tool = SerperDevTool()
 
     searcher = Agent(
         role="searcher",

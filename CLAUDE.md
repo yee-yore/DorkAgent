@@ -28,6 +28,7 @@ Create `.env` file with required API keys:
 ```bash
 SERPER_API_KEY=        # Required if using Serper as the search engine - https://serper.dev/
 SERPAPI_API_KEY=       # Required if using SerpApi as the search engine - https://serpapi.com/manage-api-key
+SERPLY_API_KEY=        # Required if using Serply as the search engine - https://serply.io/
 OPENAI_API_KEY=        # Optional - set if using OpenAI
 ANTHROPIC_API_KEY=     # Optional - set if using Anthropic
 GEMINI_API_KEY=        # Optional - set if using Gemini (recommended for free usage)
@@ -60,7 +61,7 @@ The application follows a sequential workflow pattern coordinated by CrewAI:
    - `integrate_notify()`: Optional notify tool integration (utils.py:61-72)
 
 3. **Execution Phase** (dorkagent.py:125-160)
-   - **Task 1** (tasks.py:6-120): `searcher` agent executes 30 Google Dork queries via the selected search tool (SerperDevTool or SerpApiGoogleSearchTool)
+   - **Task 1** (tasks.py:6-120): `searcher` agent executes 30 Google Dork queries via the selected search tool (SerperDevTool, SerpApiGoogleSearchTool or SerplyWebSearchTool)
    - **Task 2** (tasks.py:122-236): `bughunter` agent analyzes URLs for vulnerabilities via ScrapeWebsiteTool
    - **Task 3** (tasks.py:238-471): `writer` agent generates structured markdown security report
    - Reports saved to `./log/YYMMDD/YYMMDD_HHMMSS_domain.md`
@@ -83,14 +84,14 @@ The application follows a sequential workflow pattern coordinated by CrewAI:
   - Model choice is not hardcoded: `select_llm()` fetches the live model list from each provider's API and lets the user pick
 
 **Search Engine Configuration** (config.py):
-- `select_search_engine()`: Interactive menu returns `"serper"` or `"serpapi"`
-- `ensure_search_engine_api_key()`: Prompts for and persists the selected engine's key (`SERPER_API_KEY` or `SERPAPI_API_KEY`) if missing
-- `agents(llm, search_engine)` (agents.py) picks `SerperDevTool` or `SerpApiGoogleSearchTool` accordingly, default `"serper"`
+- `select_search_engine()`: Interactive menu returns `"serper"`, `"serpapi"` or `"serply"`
+- `ensure_search_engine_api_key()`: Prompts for and persists the selected engine's key (`SERPER_API_KEY`, `SERPAPI_API_KEY` or `SERPLY_API_KEY`) if missing
+- `agents(llm, search_engine)` (agents.py) picks `SerperDevTool`, `SerpApiGoogleSearchTool` or `SerplyWebSearchTool` accordingly, default `"serper"`
 
 **Agent Configuration** (agents.py):
 - Three specialized agents: searcher (Google Dorking), bughunter (vulnerability analysis), writer (report generation)
 - All agents share same LLM instance passed from main
-- Tools: SerperDevTool or SerpApiGoogleSearchTool (user-selected search engine) for searches, ScrapeWebsiteTool for content analysis
+- Tools: SerperDevTool, SerpApiGoogleSearchTool or SerplyWebSearchTool (user-selected search engine) for searches, ScrapeWebsiteTool for content analysis
 - No agent delegation (each operates independently)
 
 **Google Dork Query Structure** (tasks.py:6-120):
@@ -116,9 +117,10 @@ The application follows a sequential workflow pattern coordinated by CrewAI:
 - Sequential task execution (no parallel processing)
 
 **Search Tool Customization**:
-- Search engine (Serper vs SerpApi) is chosen interactively at startup via `select_search_engine()`; not hardcoded
+- Search engine (Serper vs SerpApi vs Serply) is chosen interactively at startup via `select_search_engine()`; not hardcoded
 - Serper: Default 10 results per query, `tbs: "qdr:m"` time filter (modifiable in site-packages/crewai_tools/tools/serper_dev_tool/); requires SERPER_API_KEY from serper.dev
 - SerpApi: Only forwards `q`/`location` by default; `num`/`tbs` need manual edits in site-packages/crewai_tools/tools/serpapi_tool/; requires SERPAPI_API_KEY from serpapi.com
+- Serply: `limit` is a constructor argument on `SerplyWebSearchTool`, capped at 10 results per request by the API; `tbs` needs a manual edit in site-packages/crewai_tools/tools/serply_api_tool/; requires SERPLY_API_KEY from serply.io
 
 **Report Generation**:
 - Timestamped filenames: `YYMMDD_HHMMSS_domain.md` (dorkagent.py:152-153)
